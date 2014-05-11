@@ -1,0 +1,86 @@
+#!/bin/bash
+
+#SvnSelector  - Ajudante para selecionar os arquivos que devem ser commitados
+
+while getopts ":o:p:m:d" opt; do
+case $opt in
+	o)
+		operacao="${OPTARG}"
+		;;
+	p)
+		pesquisa=$(echo "${OPTARG}"| tr '[a-z]' '[A-Z]')
+		;;
+	d)
+		valor="TRUE"
+		;;
+	m)
+		meld="true"
+		;;
+	:)
+  	echo "Opção $OPTARG precisa de argumento." >&2
+  	exit 1
+  	;;
+ esac
+done
+
+nomePasta="SIGAA_patrimonio"
+
+if [[ "$meld" != "" ]] ; then
+	echo "Iniciando meld de arquivos modificados no diretório..."
+	#echo $nomePasta;
+	find . -type d | xargs -i mkdir -p /tmp/$nomePasta/{}/
+	svn status -u | grep -E '^M' | awk -v nomePasta=$nomePasta '{printf ".";system("svn cat -r "$2" "$3" > /tmp/"nomePasta"/"$3)}' ;
+	meld . /tmp/$nomePasta ;
+	rm -fr /tmp/$nomePasta ;
+	exit 0;
+fi
+
+if [[ -z $pesquisa ]] ;  then
+	pesquisa="^[AM]"
+fi
+
+if [[ -z $operacao ]] ;  then
+	operacao="diff --diff-cmd='/usr/bin/meld' "
+fi
+
+echo "Opção de Pesquisa Selecionada: $pesquisa"
+echo "Operação: $operacao"
+#Atentar para o espaço depois da opção (Grep)
+
+#Calculando o tamanho máximo para ajustar o tamanho da janela
+tamanho_maximo=$(echo "$escolhas" |awk '{print length}' | sort -r | head -1)
+tamanho_maximo=$(echo $((tamanho_maximo+40))) #30 a mais para dar folga
+
+#Mensagem
+mensagem="Choose Your Destiny \\n Operação a ser aplicada: $operacao em "$(pwd)
+
+CHANGEDFILES=$(svn status | grep -e "$pesquisa "  | sed -r 's/(\ )+/\ /g' | awk '{ print "TRUE",$1,$2  }')
+if [[ -z $valor ]] ;  then
+CHANGEDFILES=$(svn status | grep -e "$pesquisa "  | sed -r 's/(\ )+/\ /g' | awk '{ print "FALSE",$1,$2  }')
+fi
+#Se não tiver arquivos para commitar, então saia.
+if [[ -z $CHANGEDFILES ]] ;  then
+	echo "Sem arquivos para commitar."
+	exit 1
+fi
+
+#Montagem da tabela de escolha
+#echo "valor: $valor"
+
+resultado=$(zenity --list --width=$tamanho_maximo --height=500 --text="$mensagem" --title="svnselector" --checklist --column="" --column="Status" --column="File" --print-column="3" $CHANGEDFILES --separator=" ")
+
+
+resultado=$(echo "$resultado" | tr -d '"')
+
+#Debug
+#svn diff "$resultado"
+#echo "Resultado: $resultado"
+#echo "Tamanho_Maximo: $tamanho_maximo"
+#echo "Escolhas: ${#escolhas}"
+#echo "${escolhas}"
+#awk '{print $escolhas"--"length}'
+
+#Commit os arquivos escolhidos!
+if [[ "$resultado" != "" ]] ;  then
+	eval "svn $operacao $resultado"
+fi
